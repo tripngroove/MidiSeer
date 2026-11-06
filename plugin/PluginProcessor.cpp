@@ -215,6 +215,10 @@ void MidiSeerProcessor::setStateInformation (const void* data, int sizeInBytes)
     state.removeProperty ("learned", nullptr); // kept in the map, not twice
     parameters.replaceState (state);
     learnedChanged.sendChangeMessage();
+
+    // Tell the host every value may have changed, so it refreshes its controls. (The CLAP
+    // wrapper turns a "program changed" notice into a parameter value rescan.)
+    updateHostDisplay (ChangeDetails().withProgramChanged (true));
 }
 
 } // namespace midiseer
