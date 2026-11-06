@@ -1,0 +1,3 @@
+[submodule "libs/plugin-ui-kit"]
+	path = libs/plugin-ui-kit
+	url = https://github.com/tripngroove/plugin-ui-kit.git
