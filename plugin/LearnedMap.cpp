@@ -1,7 +1,5 @@
 #include "LearnedMap.h"
 
-#include "midiseer/Seer.h"
-
 namespace midiseer
 {
 
@@ -25,12 +23,12 @@ LengthMap& LearnedMap::beginBlock()
     return audio->map;
 }
 
-void LearnedMap::learned (const LearnedNote& note)
+void LearnedMap::changed (const MapChange& change)
 {
-    // When the queue is full (nothing has read it for a long while) the note is dropped from
-    // the copy; the audio thread still knows it.
+    // When the queue is full (nothing has read it for a long while) the change misses the copy;
+    // the audio thread's map still has it.
     if (queue.getFreeSpace() > 0)
-        queue.write (1).forEach ([&] (int index) { queued[static_cast<size_t> (index)] = { note, audio->generation }; });
+        queue.write (1).forEach ([&] (int index) { queued[static_cast<size_t> (index)] = { change, audio->generation }; });
 }
 
 bool LearnedMap::sync()
@@ -38,10 +36,13 @@ bool LearnedMap::sync()
     const std::scoped_lock lock (copyLock);
     queue.read (queue.getNumReady()).forEach ([this] (int index) {
         const auto& q = queued[static_cast<size_t> (index)];
-        if (q.generation == copyGeneration && copy.learn (q.note.tick, q.note.pitch, q.note.length))
-            changed = true;
+        if (q.generation != copyGeneration)
+            return;
+        const auto& n = q.change.note;
+        if (q.change.forgotten ? copy.forget (n.tick, n.pitch) : copy.learn (n.tick, n.pitch, n.length))
+            copyChanged = true;
     });
-    return std::exchange (changed, false);
+    return std::exchange (copyChanged, false);
 }
 
 std::vector<LearnedNote> LearnedMap::notes()
@@ -66,7 +67,7 @@ void LearnedMap::replace (const std::vector<LearnedNote>& newNotes)
         const std::scoped_lock lock (copyLock);
         copy.assign (newNotes);
         next->generation = ++copyGeneration;
-        changed = true;
+        copyChanged = true;
     }
 
     // Swapped in at the audio thread's next block. Whatever was waiting before (or the map the

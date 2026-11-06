@@ -1,6 +1,7 @@
 #pragma once
 
 #include "midiseer/LengthMap.h"
+#include "midiseer/Seer.h"
 
 #include <juce_audio_basics/juce_audio_basics.h>
 
@@ -13,8 +14,8 @@
 namespace midiseer
 {
 
-// The learned note lengths, shared between the audio thread, which learns them and looks them
-// up, and the rest of the plugin, which shows, saves, loads and clears them.
+// The learned note lengths, shared between the audio thread, which learns them, looks them up
+// and forgets the ones a pass no longer plays, and the rest of the plugin, which shows, saves, loads and clears them.
 //
 // The audio thread owns its map and never waits. What it learns comes back through a queue to
 // a copy kept here for the editor and the saved project. A cleared or loaded map is handed to
@@ -31,8 +32,8 @@ public:
     // The map to use for this block (a replaced one is picked up here).
     LengthMap& beginBlock();
 
-    // A note the engine just learned into that map.
-    void learned (const LearnedNote& note);
+    // A note the engine just learned into that map, or forgot from it.
+    void changed (const MapChange& change);
 
     // --- Any other thread -----------------------------------------------------------------
 
@@ -59,7 +60,7 @@ private:
 
     struct Queued
     {
-        LearnedNote note;
+        MapChange change;
         std::uint32_t generation = 0;
     };
 
@@ -76,7 +77,7 @@ private:
     std::mutex copyLock; // the copy below, and reading the queue
     LengthMap copy;
     std::uint32_t copyGeneration = 0;
-    bool changed = false;
+    bool copyChanged = false;
 };
 
 // The notes of a MIDI file as learned lengths, placed from the song start (or the loop start)

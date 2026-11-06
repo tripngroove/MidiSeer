@@ -10,7 +10,7 @@ No DAW tells a plugin how long a note will be when it starts. MidiSeer learns it
 
 1. **First time through**, a note MidiSeer hasn't heard ramps over the length of the last note that ended (one beat before any has). If the note ends sooner, the CC glides to the end value in 10 ms; if it lasts longer, the CC waits at the end value.
 2. **Every note off** teaches MidiSeer that note's length, remembered by where it starts in the song and its pitch.
-3. **From the second time through**, every ramp lands exactly as its note ends. Edit a note and MidiSeer relearns it the next time it plays.
+3. **From the second time through**, every ramp lands exactly as its note ends. Edit a note and MidiSeer relearns it the next time it plays. A learned note that a pass plays past without hearing (deleted or moved) is forgotten. Starting playback in the middle of the song forgets nothing before that point.
 
 To skip the first pass, drop a MIDI file of the clip on the plugin (or click **Load MIDI file**). Its notes count from the song start, or from the loop start when Loop is on. In Bitwig, drag a clip to the Finder to get its MIDI file. **Forget all** clears what has been learned. What has been learned is saved with the project.
 
@@ -27,7 +27,7 @@ Notes played with the song stopped are not learned (there is no song position), 
 | Loop | Off: positions follow the song (the arranger). For a clip in the launcher, set the clip's length in bars, so every pass of the loop finds the same notes. Relaunching the clip at a different point of the bar may make MidiSeer relearn. |
 | MPE | Off: one ramp for every note. A new note restarts it, and notes that start together (a chord) follow the longest one. On: every note gets its own ramp on its own MIDI channel. Notes on channel 1 (a normal clip) are spread over channels 2 to 16; notes already on their own channels keep them. Switch MPE on in the synth too. |
 
-All of them can be automated. Click a value to pick from a list, or drag it up and down.
+All of them can be automated. Drag a value up and down, or click it: numbers open a field to type into (Return keeps it, Escape cancels), and MPE opens a list.
 
 ## Hardware and software synths
 

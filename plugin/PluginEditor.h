@@ -32,7 +32,7 @@ private:
     void changeListenerCallback (juce::ChangeBroadcaster*) override; // the learned notes changed
 
     // A setting's value box, kept in step with its host parameter.
-    void bind (tng::ValueBox& box, const juce::String& parameterId, int step = 1);
+    void bind (tng::ValueBox& box, const juce::String& parameterId);
     void setParameter (const juce::String& parameterId, int value);
     int parameterValue (const juce::String& parameterId) const;
 
@@ -50,7 +50,6 @@ private:
     juce::TooltipWindow tooltips { this, 500 };
     tng::ValueBox ccBox { "CC" }, startBox { "Start" }, endBox { "End" }, curveBox { "Curve" }, loopBox { "Loop" }, mpeBox { "MPE" };
     std::vector<std::pair<tng::ValueBox*, juce::String>> boxes; // and their parameter IDs
-    std::vector<int> steps;
 
     RampView ramp;
     LearnedView learnedView;

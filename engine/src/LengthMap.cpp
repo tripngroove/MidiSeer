@@ -67,6 +67,16 @@ bool LengthMap::learn (std::int64_t tick, int pitch, std::int32_t length)
     return true;
 }
 
+bool LengthMap::forget (std::int64_t tick, int pitch)
+{
+    const LearnedNote probe { tick, 0, static_cast<std::uint8_t> (pitch) };
+    const auto it = std::lower_bound (notes.begin(), notes.end(), probe, before);
+    if (it == notes.end() || it->tick != tick || it->pitch != pitch)
+        return false;
+    notes.erase (it);
+    return true;
+}
+
 void LengthMap::assign (std::span<const LearnedNote> newNotes)
 {
     notes.assign (newNotes.begin(), newNotes.begin() + static_cast<std::ptrdiff_t> (std::min (newNotes.size(), maxNotes)));

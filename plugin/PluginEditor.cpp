@@ -34,17 +34,28 @@ MidiSeerEditor::MidiSeerEditor (MidiSeerProcessor& p) : AudioProcessorEditor (p)
     ccBox.setRange (0, 127);
     startBox.setRange (0, 127);
     endBox.setRange (0, 127);
-    curveBox.setRange (-20, 20); // in steps of 5%
-    curveBox.toText = [] (int v) { return (v > 0 ? "+" : "") + juce::String (v * 5) + "%"; };
+    curveBox.setRange (-100, 100);
+    curveBox.toText = [] (int v) { return (v > 0 ? "+" : "") + juce::String (v) + "%"; };
     loopBox.setRange (0, MidiSeerProcessor::maxLoopBars);
     loopBox.toText = [] (int v) { return v == 0 ? juce::String ("Off") : juce::String (v) + (v == 1 ? " bar" : " bars"); };
+    loopBox.fromText = [] (const juce::String& text) -> std::optional<int> {
+        if (text.trim().equalsIgnoreCase ("off"))
+            return 0;
+        if (! text.containsAnyOf ("0123456789"))
+            return std::nullopt;
+        return text.getIntValue();
+    };
+
+    // Numbers are typed or dragged; only MPE's Off/On is picked from a list.
+    for (auto* box : { &ccBox, &startBox, &endBox, &curveBox, &loopBox })
+        box->setEntry (tng::ValueBox::Entry::typed);
     mpeBox.setRange (0, 1);
     mpeBox.toText = [] (int v) { return v != 0 ? juce::String ("On") : juce::String ("Off"); };
 
     bind (ccBox, "cc");
     bind (startBox, "start");
     bind (endBox, "end");
-    bind (curveBox, "curve", 5);
+    bind (curveBox, "curve");
     bind (loopBox, "loop");
     bind (mpeBox, "mpe");
 
@@ -88,12 +99,11 @@ MidiSeerEditor::~MidiSeerEditor()
     setLookAndFeel (nullptr);
 }
 
-void MidiSeerEditor::bind (tng::ValueBox& box, const juce::String& parameterId, int step)
+void MidiSeerEditor::bind (tng::ValueBox& box, const juce::String& parameterId)
 {
     box.setAccent (accent);
-    box.onChange = [this, parameterId, step] (int v) { setParameter (parameterId, v * step); };
+    box.onChange = [this, parameterId] (int v) { setParameter (parameterId, v); };
     boxes.emplace_back (&box, parameterId);
-    steps.push_back (step);
     addAndMakeVisible (box);
 }
 
@@ -193,11 +203,10 @@ void MidiSeerEditor::timerCallback()
 {
     // Follow the host's parameters (automation, undo, project load).
     bool widthsChanged = false;
-    for (size_t i = 0; i < boxes.size(); ++i)
+    for (auto& [box, id] : boxes)
     {
-        auto* box = boxes[i].first;
         const int before = box->getPreferredWidth();
-        box->setValue (juce::roundToInt (static_cast<float> (parameterValue (boxes[i].second)) / static_cast<float> (steps[i])));
+        box->setValue (parameterValue (id));
         widthsChanged |= box->getPreferredWidth() != before;
     }
     if (widthsChanged)

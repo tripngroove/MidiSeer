@@ -33,17 +33,25 @@ struct MidiEvent
     bool operator== (const MidiEvent&) const = default;
 };
 
+// A note the engine learned, or forgot because a pass of the song no longer played it.
+struct MapChange
+{
+    LearnedNote note;
+    bool forgotten = false;
+    bool operator== (const MapChange&) const = default;
+};
+
 // What the processor sends on: the incoming messages and the ramps' CCs, in time order, and
-// the notes learned (for the editor's copy of the map and the saved project).
+// the changes to the map (for the editor's copy and the saved project).
 struct Output
 {
     std::vector<MidiEvent> events;
-    std::vector<LearnedNote> learned;
+    std::vector<MapChange> changes;
 
     void clear()
     {
         events.clear();
-        learned.clear();
+        changes.clear();
     }
 };
 
@@ -83,6 +91,10 @@ std::int64_t positionKey (double songBeat, double loopBeats);
 // takes over, and notes that start together follow the longest one.
 // MPE on: a ramp per channel. Notes on channel 1 get a channel of their own from 2 to 16 (so a
 // plain clip comes out as MPE); notes already on channels 2 to 16 keep theirs.
+//
+// Each pass also tidies the map: once the song has played past where a learned note starts
+// without playing it (it was deleted or moved), the note is forgotten. Only while the song
+// plays on without jumping, so starting playback mid-song forgets nothing before that point.
 //
 // It runs on the audio thread: it never allocates once Output has room for a block's events.
 class Seer
@@ -152,6 +164,10 @@ private:
     int memberChannelFor (int inChannel) const;
     void release (Voice& v, std::int64_t t, Output& out);
 
+    // Forgets learned notes from where the last sweep stopped up to `songBeat` that no note
+    // started near this time round.
+    void sweepTo (double songBeat, Output& out);
+
     // Sends every voice's CCs up to `t`.
     void advanceTo (std::int64_t t, Output& out);
     void render (Voice& v, std::int64_t from, std::int64_t to, Output& out);
@@ -180,6 +196,21 @@ private:
     std::int64_t gapSamples = 192, glideSamples = 480;
 
     RampStatus lastStatus;
+
+    // Tidying the map (see sweepTo): how far the song has been checked, where it should be at
+    // the next block if it plays on, and the notes that started lately (a learned note near
+    // one of them stays).
+    struct Started
+    {
+        double songBeat = 0.0;
+        std::int64_t key = 0;
+        std::uint8_t pitch = 0;
+    };
+    double sweptTo = 0.0;
+    double expectedSongBeat = 0.0;
+    bool wasPlaying = false;
+    std::array<Started, 256> started {};
+    std::size_t numStarted = 0;
 };
 
 // The ramp's shape: how far along the value is (0 to 1) when `p` of the note has passed.

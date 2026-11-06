@@ -68,3 +68,20 @@ TEST_CASE ("a map can be filled all at once")
     const std::vector<LearnedNote> expected { { 0, 20, 62 }, { 960, 30, 60 } };
     CHECK (std::vector<LearnedNote> (map.all().begin(), map.all().end()) == expected);
 }
+
+TEST_CASE ("notes can be forgotten one by one or by sweeping a stretch")
+{
+    LengthMap map;
+    map.learn (0, 60, 10);
+    map.learn (960, 60, 10);
+    map.learn (960, 64, 10);
+    map.learn (1920, 60, 10);
+
+    CHECK (map.forget (960, 64));
+    CHECK_FALSE (map.forget (960, 64));
+
+    std::vector<LearnedNote> removed;
+    map.sweep (0, 1920, [] (const LearnedNote& n) { return n.tick == 0; }, [&] (const LearnedNote& n) { removed.push_back (n); });
+    CHECK (removed == std::vector<LearnedNote> { { 960, 10, 60 } });
+    CHECK (map.size() == 2); // 0 kept, 1920 outside the stretch
+}

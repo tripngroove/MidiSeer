@@ -300,3 +300,76 @@ TEST_CASE ("other messages pass straight through")
     CHECK (rig.sent[0].event.status == 0xe0);
     CHECK (rig.sent[1].event == MidiEvent { 20, 0xb0, 7, 100 });
 }
+
+TEST_CASE ("a pass forgets learned notes it no longer plays")
+{
+    Rig rig;
+    rig.map.learn (0, 60, ticksPerBeat); // still in the clip
+    rig.map.learn (2 * ticksPerBeat, 62, ticksPerBeat); // deleted since
+    rig.map.learn (5 * ticksPerBeat, 64, ticksPerBeat); // not reached yet
+    rig.run (beats (4), { { 0, on (60) }, { beats (1), off (60) } });
+
+    CHECK (rig.map.find (0, 60).has_value());
+    CHECK_FALSE (rig.map.find (2 * ticksPerBeat, 62).has_value());
+    CHECK (rig.map.find (5 * ticksPerBeat, 64).has_value());
+}
+
+TEST_CASE ("a note starting a little early still counts as its learned one")
+{
+    Rig rig;
+    rig.map.learn (ticksPerBeat, 60, ticksPerBeat);
+    rig.run (beats (3), { { beats (1) - 300, on (60) }, { beats (2), off (60) } }); // about 12 ticks early
+    CHECK (rig.map.size() == 1);
+}
+
+TEST_CASE ("starting playback mid-song forgets nothing before that point")
+{
+    Rig rig;
+    rig.map.learn (ticksPerBeat, 60, ticksPerBeat);
+    rig.map.learn (9 * ticksPerBeat, 62, ticksPerBeat);
+    rig.songBeat = 8.0;
+    rig.run (beats (2));
+
+    CHECK (rig.map.find (ticksPerBeat, 60).has_value()); // before where it started
+    CHECK_FALSE (rig.map.find (9 * ticksPerBeat, 62).has_value()); // played past, not heard
+}
+
+TEST_CASE ("the forgotten notes are reported, so the saved copy loses them too")
+{
+    Rig rig;
+    rig.map.learn (ticksPerBeat, 62, ticksPerBeat);
+    std::vector<MapChange> changes;
+    rig.seer.prepare (sampleRate);
+    for (int b = 0; b < 100; ++b)
+    {
+        rig.out.clear();
+        rig.seer.beginBlock ({ blockSize, samplesPerBeat, true, b * blockSize / samplesPerBeat });
+        rig.seer.endBlock (rig.out);
+        changes.insert (changes.end(), rig.out.changes.begin(), rig.out.changes.end());
+    }
+    REQUIRE (changes.size() == 1);
+    CHECK (changes[0] == MapChange { { ticksPerBeat, ticksPerBeat, 62 }, true });
+}
+
+TEST_CASE ("in a loop, each pass forgets what it no longer plays")
+{
+    Settings s;
+    s.loopBeats = 4.0;
+    Rig rig (s);
+    // First pass: two notes. Second pass: only the first, played at song beat 4.
+    rig.run (beats (8), { { beats (1), on (60) }, { beats (1.5), off (60) }, { beats (2), on (62) }, { beats (2.5), off (62) },
+                          { beats (5), on (60) }, { beats (5.5), off (60) } });
+
+    CHECK (rig.map.find (ticksPerBeat, 60).has_value());
+    CHECK_FALSE (rig.map.find (2 * ticksPerBeat, 62).has_value());
+}
+
+TEST_CASE ("a jump in the song starts the tidying afresh")
+{
+    Rig rig;
+    rig.map.learn (3 * ticksPerBeat, 60, ticksPerBeat);
+    rig.run (beats (1));
+    rig.songBeat = 10.0; // the playhead jumps past the note: it was never played past
+    rig.run (beats (2));
+    CHECK (rig.map.find (3 * ticksPerBeat, 60).has_value());
+}

@@ -45,6 +45,10 @@ void Seer::prepare (double sampleRate)
     blockStartBeat = 0.0;
     renderedTo = 0;
     lastStatus = {};
+    sweptTo = 0.0;
+    expectedSongBeat = 0.0;
+    wasPlaying = false;
+    numStarted = 0;
 }
 
 std::int64_t positionKey (double songBeat, double loopBeats)
@@ -65,6 +69,14 @@ void Seer::beginBlock (const BlockInfo& info)
 {
     block = info;
     block.samplesPerBeat = std::max (block.samplesPerBeat, 1.0);
+
+    // Playback started or jumped: tidy the map only from here on.
+    const bool playingOn = info.playing && wasPlaying && std::abs (info.songBeat - expectedSongBeat) < toleranceBeats;
+    if (info.playing && ! playingOn)
+    {
+        sweptTo = info.songBeat;
+        numStarted = 0;
+    }
 }
 
 void Seer::endBlock (Output& out)
@@ -82,8 +94,57 @@ void Seer::endBlock (Output& out)
         lastStatus.value = std::max (v.lastValue, 0);
     }
 
+    // The sweep stays a little behind the playhead, so a note that starts a few ticks late still
+    // counts as its learned one.
+    if (block.playing)
+    {
+        expectedSongBeat = block.songBeat + block.numSamples / block.samplesPerBeat;
+        sweepTo (expectedSongBeat - toleranceBeats, out);
+    }
+    wasPlaying = block.playing;
+
     blockStartSample = end;
     blockStartBeat += block.numSamples / block.samplesPerBeat;
+}
+
+void Seer::sweepTo (double songBeat, Output& out)
+{
+    if (map == nullptr || songBeat <= sweptTo)
+        return;
+
+    const std::int64_t loop = std::llround (settings.loopBeats * ticksPerBeat);
+    const auto distance = [loop] (std::int64_t a, std::int64_t b) -> std::int64_t {
+        const auto d = a > b ? a - b : b - a;
+        return loop > 0 ? std::min (d, loop - d) : d;
+    };
+    const auto keep = [&] (const LearnedNote& n) {
+        for (std::size_t i = 0; i < numStarted; ++i)
+            if (started[i].pitch == n.pitch && distance (started[i].key, n.tick) <= matchTolerance)
+                return true;
+        return false;
+    };
+    const auto removed = [&out] (const LearnedNote& n) { out.changes.push_back ({ n, true }); };
+
+    const auto from = positionKey (sweptTo), to = positionKey (songBeat);
+    if (loop <= 0)
+        map->sweep (from, to, keep, removed);
+    else if (songBeat - sweptTo >= settings.loopBeats)
+        map->sweep (0, loop, keep, removed);
+    else if (from <= to)
+        map->sweep (from, to, keep, removed);
+    else // across the loop's end
+    {
+        map->sweep (from, loop, keep, removed);
+        map->sweep (0, to, keep, removed);
+    }
+    sweptTo = songBeat;
+
+    // Notes that started before the sweep can no longer save anything.
+    std::size_t kept = 0;
+    for (std::size_t i = 0; i < numStarted; ++i)
+        if (started[i].songBeat >= sweptTo - 2.0 * toleranceBeats)
+            started[kept++] = started[i];
+    numStarted = kept;
 }
 
 void Seer::handle (const MidiEvent& in, Output& out)
@@ -145,6 +206,17 @@ void Seer::noteOn (std::int64_t t, const MidiEvent& in, Output& out)
     const double now = beatAt (t);
     h = Held { true, block.playing, now, block.playing ? block.songBeat + (now - blockStartBeat) : 0.0,
                static_cast<std::uint8_t> (outChannel), static_cast<std::uint8_t> (voiceIndex) };
+
+    // Remember it started, for tidying the map. (When full, the oldest goes.)
+    if (h.positioned)
+    {
+        if (numStarted == started.size())
+        {
+            std::move (started.begin() + 1, started.end(), started.begin());
+            --numStarted;
+        }
+        started[numStarted++] = { h.songBeat, positionKey (h.songBeat), static_cast<std::uint8_t> (pitch) };
+    }
 
     // How long it will last: learned, or a guess.
     double length = guessBeats;
@@ -214,7 +286,7 @@ void Seer::noteOff (std::int64_t t, const MidiEvent& in, Output& out)
             const LearnedNote note { positionKey (h.songBeat), static_cast<std::int32_t> (std::llround (length * ticksPerBeat)),
                                      static_cast<std::uint8_t> (pitch) };
             if (note.length > 0 && map->learn (note.tick, note.pitch, note.length))
-                out.learned.push_back (note);
+                out.changes.push_back ({ note });
         }
     }
 

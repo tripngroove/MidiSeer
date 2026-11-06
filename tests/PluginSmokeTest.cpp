@@ -3,6 +3,8 @@
 
 #include "PluginProcessor.h"
 
+#include <tng_ui/tng_ui.h>
+
 #include <juce_audio_processors/juce_audio_processors.h>
 
 #include <catch2/catch_test_macros.hpp>
@@ -231,6 +233,39 @@ TEST_CASE ("the editor opens")
         juce::FileOutputStream out (file);
         juce::PNGImageFormat().writeImageToStream (image, out);
     }
+
+    host.plugin->editorBeingDeleted (editor.get());
+}
+
+TEST_CASE ("a CC number is typed in, not picked from a list")
+{
+    Host host;
+    std::unique_ptr<juce::AudioProcessorEditor> editor (host.plugin->createEditorAndMakeActive());
+
+    tng::ValueBox* cc = nullptr;
+    for (auto* child : editor->getChildren())
+        if (auto* box = dynamic_cast<tng::ValueBox*> (child); box != nullptr && box->getName() == "CC")
+            cc = box;
+    REQUIRE (cc != nullptr);
+
+    // A click on the value opens a field.
+    const juce::Point<float> at { static_cast<float> (cc->getWidth() - 6), cc->getHeight() / 2.0f };
+    const auto now = juce::Time::getCurrentTime();
+    const juce::MouseEvent click (juce::Desktop::getInstance().getMainMouseSource(), at, {}, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, cc, cc, now, at, now, 1, false);
+    cc->mouseDown (click);
+    cc->mouseUp (click);
+
+    juce::TextEditor* field = nullptr;
+    for (auto* child : cc->getChildren())
+        if (auto* f = dynamic_cast<juce::TextEditor*> (child); f != nullptr && f->isVisible())
+            field = f;
+    REQUIRE (field != nullptr);
+
+    // Typing 74 and Return sets the parameter.
+    field->setText ("74");
+    field->onReturnKey(); // what Return does (JUCE delivers the key press itself asynchronously)
+    CHECK_FALSE (field->isVisible());
+    CHECK (juce::roundToInt (host.processor().parameters.getRawParameterValue ("cc")->load()) == 74);
 
     host.plugin->editorBeingDeleted (editor.get());
 }

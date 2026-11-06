@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <optional>
@@ -49,6 +50,27 @@ public:
     // Replaces every note with these (in any order), up to the capacity. Notes at the same
     // tick and pitch keep the last one.
     void assign (std::span<const LearnedNote> newNotes);
+
+    // Removes the note at exactly this tick and pitch. False if there is none.
+    bool forget (std::int64_t tick, int pitch);
+
+    // Removes the notes starting from `from` up to (not including) `to` that `keep` turns down,
+    // calling `removed` with each.
+    template <typename Keep, typename Removed>
+    void sweep (std::int64_t from, std::int64_t to, Keep keep, Removed removed)
+    {
+        auto first = std::lower_bound (notes.begin(), notes.end(), from, [] (const LearnedNote& n, std::int64_t t) { return n.tick < t; });
+        auto out = first;
+        auto it = first;
+        for (; it != notes.end() && it->tick < to; ++it)
+        {
+            if (keep (*it))
+                *out++ = *it;
+            else
+                removed (*it);
+        }
+        notes.erase (out, it);
+    }
 
     void clear() { notes.clear(); }
     std::size_t size() const { return notes.size(); }

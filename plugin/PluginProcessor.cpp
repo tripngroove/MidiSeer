@@ -63,7 +63,7 @@ MidiSeerProcessor::MidiSeerProcessor()
     mpe = parameters.getRawParameterValue ("mpe");
 
     engineOut.events.reserve (4096);
-    engineOut.learned.reserve (256);
+    engineOut.changes.reserve (1024);
     startTimerHz (30);
 }
 
@@ -149,8 +149,8 @@ void MidiSeerProcessor::processBlock (juce::AudioBuffer<float>& audio, juce::Mid
         const std::uint8_t bytes[] { e.status, e.data1, e.data2 };
         output.addEvent (bytes, juce::MidiMessage::getMessageLengthFromFirstByte (e.status), e.sample);
     }
-    for (const auto& note : engineOut.learned)
-        learned.learned (note);
+    for (const auto& change : engineOut.changes)
+        learned.changed (change);
 
     midi.swapWith (output);
 
